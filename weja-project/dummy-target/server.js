@@ -12,7 +12,10 @@ const app = express();
 const PORT = 4000;
 
 // MongoDB Connection
-mongoose.connect('mongodb://localhost:27017/weja-target')
+mongoose.connect('mongodb://localhost:27017/weja-target', {
+    serverSelectionTimeoutMS: 3000,
+    connectTimeoutMS: 3000
+})
     .then(() => console.log('📦 Connected to MongoDB'))
     .catch(err => console.log('⚠️ MongoDB connection failed:', err.message));
 
@@ -45,8 +48,12 @@ const getDbStatus = () => mongoose.connection.readyState === 1 ? 'connected' : '
 
 // Home - Dashboard
 app.get('/', async (req, res) => {
-    const commentCount = await Comment.countDocuments().catch(() => 0);
-    const searchCount = await SearchLog.countDocuments().catch(() => 0);
+    let commentCount = 0;
+    let searchCount = 0;
+    if (getDbStatus() === 'connected') {
+        commentCount = await Comment.countDocuments().catch(() => 0);
+        searchCount = await SearchLog.countDocuments().catch(() => 0);
+    }
 
     res.render('index', {
         title: 'Target Dashboard',
@@ -60,10 +67,13 @@ app.get('/search', async (req, res) => {
     const query = req.query.q || '';
     let results = [];
     let recentSearches = [];
+    const dbConnected = getDbStatus() === 'connected';
 
     if (query) {
         // Log search to MongoDB
-        await SearchLog.create({ query }).catch(() => { });
+        if (dbConnected) {
+            await SearchLog.create({ query }).catch(() => { });
+        }
 
         // Simulated results
         results = [
@@ -72,7 +82,9 @@ app.get('/search', async (req, res) => {
         ];
     }
 
-    recentSearches = await SearchLog.find().sort({ createdAt: -1 }).limit(5).catch(() => []);
+    if (dbConnected) {
+        recentSearches = await SearchLog.find().sort({ createdAt: -1 }).limit(5).catch(() => []);
+    }
 
     res.render('search', {
         title: 'Search',
@@ -105,7 +117,10 @@ app.post('/login', (req, res) => {
 
 // Comments Page
 app.get('/comment', async (req, res) => {
-    const comments = await Comment.find().sort({ createdAt: -1 }).limit(20).catch(() => []);
+    let comments = [];
+    if (getDbStatus() === 'connected') {
+        comments = await Comment.find().sort({ createdAt: -1 }).limit(20).catch(() => []);
+    }
 
     res.render('comment', {
         title: 'Comments',
@@ -117,14 +132,20 @@ app.get('/comment', async (req, res) => {
 
 app.post('/comment', async (req, res) => {
     const { content, author } = req.body;
+    const dbConnected = getDbStatus() === 'connected';
 
-    try {
-        await Comment.create({ content, author: author || 'Anonymous' });
-    } catch (err) {
-        console.log('Failed to save comment:', err.message);
+    if (dbConnected) {
+        try {
+            await Comment.create({ content, author: author || 'Anonymous' });
+        } catch (err) {
+            console.log('Failed to save comment:', err.message);
+        }
     }
 
-    const comments = await Comment.find().sort({ createdAt: -1 }).limit(20).catch(() => []);
+    let comments = [];
+    if (dbConnected) {
+        comments = await Comment.find().sort({ createdAt: -1 }).limit(20).catch(() => []);
+    }
 
     res.render('comment', {
         title: 'Comments',
